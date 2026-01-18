@@ -8,6 +8,8 @@ import {
   Param,
   Query,
   NotFoundException,
+  Session,
+  UseGuards,
 } from '@nestjs/common';
 
 import { CreateUserDto } from './dtos/create-user.dto';
@@ -15,19 +17,46 @@ import { UpdateUserDto } from './dtos/update-user.dto';
 import { UsersService } from './users.service';
 import { Serialize } from 'src/interceptors/serialize.interceptor';
 import { UserDto } from './dtos/user.dto';
+import { AuthService } from './auth.service';
+import { CurrentUser } from 'src/decorators/current-user.decorator';
+import { User } from './user.entity';
+import { AuthGuard } from 'src/guards/auth.guard';
 
 @Controller('auth')
 @Serialize(UserDto)
 export class UsersController {
-  constructor(private service: UsersService) {}
+  constructor(
+    private usersService: UsersService,
+    private authService: AuthService,
+  ) {}
   @Post('/signup')
-  createUser(@Body() body: CreateUserDto) {
-    return this.service.create(body.email, body.password);
+  async createUser(@Body() body: CreateUserDto, @Session() session: any) {
+    const user = await this.authService.signup(body.email, body.password);
+    session.userId = user.id;
+    return user;
+  }
+
+  @Post('/signin')
+  async signin(@Body() body: CreateUserDto, @Session() session: any) {
+    const user = await this.authService.signin(body.email, body.password);
+    session.userId = user.id;
+    return user;
+  }
+
+  @Post('/signout')
+  signout(@Session() session: any) {
+    session.userId = null;
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('/whoami')
+  whoAmI(@CurrentUser() user: User) {
+    return user;
   }
 
   @Get('/:id')
   async findUser(@Param('id') id: string) {
-    const user = await this.service.findOne(Number(id));
+    const user = await this.usersService.findOne(Number(id));
     if (!user) {
       throw new NotFoundException('user not found');
     }
@@ -36,7 +65,7 @@ export class UsersController {
 
   @Get()
   async findAllUsers(@Query('email') email: string) {
-    const users = await this.service.find(email);
+    const users = await this.usersService.find(email);
     if (!users) {
       throw new NotFoundException('user not found');
     }
@@ -45,11 +74,11 @@ export class UsersController {
 
   @Patch('/:id')
   updateUser(@Body() body: UpdateUserDto, @Param('id') id: string) {
-    return this.service.update(Number(id), body);
+    return this.usersService.update(Number(id), body);
   }
 
   @Delete('/:id')
   removeUser(@Param('id') id: string) {
-    return this.service.remove(Number(id));
+    return this.usersService.remove(Number(id));
   }
 }
